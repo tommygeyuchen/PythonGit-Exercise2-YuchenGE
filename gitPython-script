@@ -1,0 +1,161 @@
+#Student ID:a1684469   
+#Student Name: Yuchen Ge
+#auto anser script
+
+
+
+import os
+from git import Repo
+from datetime import datetime
+import os.path
+
+seeds = {'./ofbiz': '5aa135f01ddcaa227c3db72bb08715bbb2ca19d2',
+         './spring-framework': '8e096aeef55287dc829484996c9330cf755891a1',
+         './xstream': '25c6704bea149ee93c294ae5b6e0aecd182fea88'}
+# because of merge the commit of spring-framwork already replace to new commit, but everything is same with provided one.
+
+def find_insertions_and_deletions(commit, repo, ignore_blank=True):
+    total_i = 0
+    total_d = 0
+
+    lines = repo.git.diff(commit.parents[0].hexsha, commit.hexsha)
+
+    lines = lines.split('\n')
+    # print(lines)
+    if ignore_blank:
+        for diff in lines:
+            if diff.startswith('+++') or diff.startswith('---') or len(diff.strip()) == 1:
+                continue
+            if diff.startswith('+'):
+                total_i += 1
+            if diff.startswith('-'):
+                total_d += 1
+    else:
+        for diff in lines:
+            if diff.startswith('+++') or diff.startswith('---'):
+                continue
+            if diff.startswith('+'):
+                total_i += 1
+            if diff.startswith('-'):
+                total_d += 1
+
+    return [total_i, total_d]
+
+
+def print_commit(commit, repo):
+    #
+    # a message and title
+    print("\"{}\" by {} ({})".format(commit.summary,
+                                     commit.author.name,
+                                     commit.author.email))
+    print('message: {}'.format(commit.message))
+    print(str(commit.authored_datetime))
+
+    # b how many files were affected
+    print("files were affected: {}".format(len(commit.stats.files.items())))
+
+    # c how many dic were affected
+    dic = []
+    for path in commit.stats.files.items():
+        dic.append(os.path.dirname(path[0]))
+
+    dic = list(set(dic))
+
+    print("how many dic were affected: {}".format(len(dic)))
+
+    # d total lines were inserted
+    total_insertins = commit.stats.total['insertions']
+    print("total insertions: {}".format(total_insertins))
+
+    # e total lines were deleteted
+    total_deletions = commit.stats.total['deletions']
+    print("total deletions: {}".format(total_deletions))
+
+    # diffs = {
+    #     diff.a_path: diff for diff in commit.diff(commit.parents[0])
+    # }
+
+    total_i = 0
+    total_d = 0
+    # diffs_with_blank_line = find_insertions_and_deletions(commit, repo, False)
+    # print("total_i: {}".format(diffs_with_blank_line[0]))
+    # print("total_d: {}".format(diffs_with_blank_line[1]))
+
+    diffs_with_no_blank_line = find_insertions_and_deletions(commit, repo, True)
+
+    print("total insertions with blank lines ignored: {}".format(diffs_with_no_blank_line[0]))
+    print("total deletions with blank lines ignored: {}".format(diffs_with_no_blank_line[1]))
+
+    contributors = {}
+    contributors_dic = set()
+    for objpath, stats in commit.stats.files.items():
+        print("total  {} lines were inserted into file {}".format(stats['insertions'], objpath))
+        # print(repo.git.log('--follow', objpath).split('commit '))
+        counter = 0
+        found = False
+        # git log a specific file and traver its' commits split result with 'commit' key word to find target commit.
+        # may have edge cases but works find with current cases
+        commit_list = repo.git.log('--date=raw', '--follow', '--', objpath).split('commit ')
+        for index, value in enumerate(commit_list):
+            commit_obj = value.split('\n')
+            if len(commit_obj) > 1 and commit_obj[1].startswith("Author:"):
+
+                author = commit_obj[1].split(": ")
+                contributors_dic.add(author[1])
+                if contributors.get(author[1]) is None:
+                    contributors[author[1]] = 1
+                else:
+                    contributors[author[1]] += 1
+
+            if value.startswith(commit.hexsha):
+                cur_date = datetime.fromtimestamp(int(commit_list[index].split('\n')[2].split(' ')[3]))
+                pre_date = datetime.fromtimestamp(int(commit_list[index + 1].split('\n')[2].split(' ')[3]))
+
+                # print("previous one: {}".format(commit_list[index + 1].split('\n')[2].split(' ')[3]))
+                print("Total {} Days between the fixing commit and the previous commit  : ".format(
+                    (cur_date - pre_date).days))
+                found = True
+            if found:
+                counter += 1
+
+        print("file {} contributors:".format(objpath))
+        for author in contributors_dic:
+            print(author)
+
+        # i
+        print("total {} commit relate to file {} before the fixing commit".format(counter, objpath))
+
+    # k
+    for author, co in contributors.items():
+        print("author {} commited {}".format(author, co))
+
+
+def print_repository(repo):
+    print('Repo description: {}'.format(repo))
+    print('Repo active branch is {}'.format(repo.active_branch))
+    for remote in repo.remotes:
+        print('Remote named "{}" with URL "{}"'.format(remote, remote.url))
+    print('Last commit for repo is {}.'.format(str(repo.head.commit.hexsha)))
+
+
+if __name__ == "__main__":
+    # repo_path = os.getenv('GIT_REPO_PATH')
+    # Repo object used to programmatically interact with Git repositories
+
+    for key, value in seeds.items():
+        repo = Repo(key)
+        # check that the repository loaded correctly
+        if not repo.bare:
+            print('Repo at {} successfully loaded.'.format(key))
+            print_repository(repo)
+            # create list of commits then print some of them to stdout
+            commits = list(repo.iter_commits(repo.active_branch))
+
+            for commit in commits:
+                if commit.hexsha == value:
+                    print_commit(commit, repo)
+                    break
+        else:
+            print('Could not load repository at {} :('.format(key))
+
+        print("-----------------------{}----------------------------".format(key))
